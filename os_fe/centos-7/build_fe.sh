@@ -131,7 +131,7 @@ delete_keypair $BUILDMARK
 
 s3 delete $BUCKET/$TMP_IMG_NAME.qcow2
 
-s3 delete $BUCKET
+s3 delete-bucket $BUCKET
 #tests image
 
 if [ -z $IMG_ID ]
