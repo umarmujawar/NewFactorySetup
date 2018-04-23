@@ -1,0 +1,201 @@
+---
+#
+##
+### Written by the CAT (Cloudwatt Automation Team)
+##
+#
+- hosts: all
+  become: yes
+  user: cloud
+
+  vars:
+    os_image_factory:
+      packer:
+        version: "0.12.2"
+        zip_url: "https://releases.hashicorp.com/packer/0.12.2/packer_0.12.2_linux_amd64.zip"
+      jenkins:
+        local_url: "http://127.0.0.1:8080"
+        repository: "http://pkg.jenkins-ci.org/redhat-stable/jenkins.repo"
+        repo_key: "https://jenkins-ci.org/redhat/jenkins-ci.org.key"
+
+  tasks:
+    - name: toolkit packages present
+      yum: pkg="{{ item }}" state=present
+      with_items:
+        - git
+        - python-devel
+        - python-setuptools
+        - gcc-c++
+        - make
+        - jq
+        - libs3
+      retries: 3
+
+    - name: yum package pip is absent
+      yum: name=python-pip state=absent
+
+    - name: system upgrade
+      yum:
+        name: '*'
+        state: latest
+
+    - name: jenkins key server is known
+      rpm_key: key="{{ os_image_factory.jenkins.repo_key }}" state=present
+
+    - name: jenkins wget server is known
+      get_url:
+        url: "{{ os_image_factory.jenkins.repository }}"
+        dest: /etc/yum.repos.d/jenkins.repo
+
+    - name: needed packages installed
+      yum: name="{{ item }}" state=present
+      with_items:
+        - libguestfs-tools
+        - wget
+        - libffi-devel
+        - python-cffi
+        - openssl-devel
+        - java-1.8.0-openjdk
+        - unzip
+
+    - name: Install Jenkins
+      yum: name="{{ item }}" state=present
+      with_items:
+        - jenkins
+
+    - name: jenkins service is up
+      service: name=jenkins state=restarted enabled=yes
+
+    - name: jenkins is kvm member
+      user: name=jenkins shell=/bin/bash groups=kvm,qemu,libvirt append=yes
+
+    - name: common aliases
+      copy:
+        dest=/etc/profile.d/aliases.sh
+        content="alias ll=\"ls -aul\""
+        owner=root
+        group=root
+        mode=0644
+
+
+    - name: check packer is installed
+      stat: path=/usr/local/bin/packer
+      register: packer_bin_check
+
+    - name: setting fact packer_installed
+      set_fact:
+        packer_installed="{{ packer_bin_check.stat.exists }}"
+
+    - name: checking installed packer version
+      when: packer_installed
+      shell: "/usr/local/bin/packer --version"
+      ignore_errors: true
+      register: packer_version
+
+    - name: setting fact need_to_install_packer
+      set_fact:
+        need_to_install_packer="{{ (not packer_installed) or (packer_version.stdout != os_image_factory.packer.version) }}"
+
+    - name: packer download
+      when: need_to_install_packer
+      get_url:
+        url="{{ os_image_factory.packer.zip_url }}"
+        dest=/tmp/packer.zip
+        force=no
+
+    - name: packer destination directory is ready
+      when: need_to_install_packer
+      file:
+        path=/usr/local/bin
+        state=directory
+        owner=root
+        group=root
+        mode=0755
+
+    - name: unzip packer
+      when: need_to_install_packer
+      unarchive:
+        src=/tmp/packer.zip
+        dest=/usr/local/bin
+        copy=no
+        owner=root
+        group=root
+        mode=0755
+
+    - name: pip is installed
+      easy_install: name=pip
+
+    - name: openstack CLI is installed
+      pip: name="{{ item }}" state=latest
+      with_items:
+        - ndg-httpsclient
+        - pip
+      register: result
+      until: result|success
+      retries: 3
+      delay: 2
+
+    - name: openstack CLI is installed
+      pip: name="{{ item.name }}"
+      with_items:
+        - { name: python-openstackclient }
+        - { name: python-glanceclient }
+        - { name: python-novaclient }
+        - { name: python-keystoneclient }
+        - { name: python-neutronclient }
+        - { name: python-heatclient }
+        - { name: python-cinderclient }
+        - { name: python-swiftclient }
+      register: result
+      until: result|success
+      retries: 3
+      delay: 2
+
+
+    - name: Dependance Python
+      pip: name="{{ item.name }}"
+      with_items:
+        - { name: monotonic }
+        - { name: msgpack-python }
+        - { name: netaddr, version }
+        - { name: netifaces  }
+        - { name: pyOpenSSL  }
+        - { name: requests }
+        - { name: requestsexceptions }
+        - { name: six }
+        - { name: nose }
+        - { name: paramiko }
+        - { name: python-dateutil }
+      register: result
+      until: result|success
+      retries: 3
+      delay: 2
+
+
+    - name:
+      file:
+         path: /var/lib/jenkins/tmp
+         state: directory
+         owner: jenkins
+         group: jenkins
+         mode: 0755
+
+    - name: format cinder volume
+      filesystem: fstype=ext4 dev=/dev/vdb
+
+
+    - name: mount volume cinder
+      mount:
+        name: /var/lib/jenkins/tmp
+        src: /dev/vdb
+        fstype: ext4
+        state: mounted
+      ignore_errors: yes
+
+    -  name: Add env on /var/lib/jenkins/.profile
+       template: src=profile.j2 dest=/var/lib/jenkins/.profile
+
+
+
+    - name: jenkins service is up
+      service: name=jenkins state=restarted enabled=yes
