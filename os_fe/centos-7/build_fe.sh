@@ -64,7 +64,7 @@ check_bucket $BUCKET
 PRECHECK=$?
 if [ $PRECHECK -ne 0 ] ; then
   echo "======create the bucket"
- s3 create $BUCKET
+ s3 create-bucket $BUCKET
 else
   echo "======= the bucket "
   echo $BUCKET
