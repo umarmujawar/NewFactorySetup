@@ -64,7 +64,7 @@ check_bucket $BUCKET
 PRECHECK=$?
 if [ $PRECHECK -ne 0 ] ; then
   echo "======create the bucket"
- s3 create-bucket $BUCKET
+ s3 create $BUCKET
 else
   echo "======= the bucket "
   echo $BUCKET
@@ -131,7 +131,7 @@ delete_keypair $BUILDMARK
 
 s3 delete $BUCKET/$TMP_IMG_NAME.qcow2
 
-s3 delete-bucket $BUCKET
+s3 delete $BUCKET
 #tests image
 
 if [ -z $IMG_ID ]
